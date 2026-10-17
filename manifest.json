@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "glint.privacy",
+  "name": "Glint",
+  "version": "0.1.0",
+  "description": "Camera activity and manual Edge Light controls",
+  "kinds": ["bar-widget", "service"],
+  "entryPoints": {"barWidget": "Widget.qml", "service": "Service.qml"},
+  "barWidget": {
+    "displayName": "Glint",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

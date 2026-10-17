@@ -1,0 +1,19 @@
+[package]
+name = "glint-helper"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Glint camera observer helper: bounded JSON status lines"
+
+[lib]
+name = "glint_helper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "glint-helper"
+path = "src/main.rs"
+
+[dependencies]
+pipewire = { version = "0.10.1", features = ["v0_3_44"] }
+libc = "0.2"
+inotify = { version = "0.11.5", default-features = false }
