@@ -88,6 +88,12 @@ fn adapter_fixture() {
         return;
     };
     assert!(Path::new(&dir).join("glint-fixture").exists());
+    std::thread::Builder::new()
+        .name("main".into())
+        .spawn(native_metadata_projection)
+        .unwrap()
+        .join()
+        .unwrap();
     let (sender, receiver) = mpsc::sync_channel(256);
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
@@ -123,4 +129,114 @@ fn adapter_fixture() {
     assert_ne!(next.state, glint_helper::status::State::Active);
     stop.store(true, Ordering::Relaxed);
     worker.join().unwrap();
+}
+
+fn native_metadata_projection() {
+    use pipewire as pw;
+    use pw::proxy::{Listener, ProxyT};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
+    pw::init();
+    let main_loop = pw::main_loop::MainLoopRc::new(None).unwrap();
+    let context = pw::context::ContextRc::new(&main_loop, None).unwrap();
+    let core = context
+        .connect_rc(Some(pw::properties::properties! {
+            "application.name" => "Fixture Call",
+            "application.process.binary" => "/fixture/call",
+        }))
+        .unwrap();
+    let registry = core.get_registry_rc().unwrap();
+    let seen = Rc::new(Cell::new(0_u8));
+    let proxies: Rc<RefCell<Vec<Box<dyn ProxyT>>>> = Rc::default();
+    let listeners: Rc<RefCell<Vec<Box<dyn Listener>>>> = Rc::default();
+    let registry_weak = registry.downgrade();
+    let seen_global = seen.clone();
+    let _listener = registry
+        .add_listener_local()
+        .global(move |obj| {
+            let registry = registry_weak.upgrade().unwrap();
+            match obj.type_ {
+                pw::types::ObjectType::Node => {
+                    let node = registry.bind::<pw::node::Node, _>(obj).unwrap();
+                    let seen = seen_global.clone();
+                    let listener = node
+                        .add_listener_local()
+                        .info(move |info| {
+                            let node = glint_helper::observer::node_from_info(info);
+                            if node.node_name == "metadata-valid" {
+                                assert_eq!(node.description.as_deref(), Some("Fixture Camera"));
+                                assert_eq!(node.nick.as_deref(), Some("Fixture Nick"));
+                                assert_eq!(node.video_path.as_deref(), Some("/dev/video42"));
+                                assert_eq!(node.device_api.as_deref(), Some("v4l2"));
+                                seen.set(seen.get() | 1);
+                            } else if node.node_name == "metadata-invalid" {
+                                assert_eq!(node.video_path, None);
+                                assert_eq!(node.description, None);
+                                assert_eq!(node.nick, None);
+                                seen.set(seen.get() | 2);
+                            }
+                        })
+                        .register();
+                    proxies.borrow_mut().push(Box::new(node));
+                    listeners.borrow_mut().push(Box::new(listener));
+                }
+                pw::types::ObjectType::Client => {
+                    let client = registry.bind::<pw::client::Client, _>(obj).unwrap();
+                    let seen = seen_global.clone();
+                    let listener = client
+                        .add_listener_local()
+                        .info(move |info| {
+                            let owner = glint_helper::observer::client_from_info(info);
+                            if owner.name == "Fixture Call" {
+                                assert_eq!(owner.binary, "/fixture/call");
+                                seen.set(seen.get() | 4);
+                            }
+                        })
+                        .register();
+                    proxies.borrow_mut().push(Box::new(client));
+                    listeners.borrow_mut().push(Box::new(listener));
+                }
+                _ => {}
+            }
+        })
+        .register();
+    let _valid = core
+        .create_object::<pw::node::Node>(
+            "spa-node-factory",
+            &pw::properties::properties! {
+                "factory.name" => "support.node.driver", "node.name" => "metadata-valid",
+                "node.description" => "Fixture Camera", "node.nick" => "Fixture Nick",
+                "api.v4l2.path" => "/dev/video42", "device.api" => "v4l2",
+            },
+        )
+        .unwrap();
+    let _invalid = core
+        .create_object::<pw::node::Node>(
+            "spa-node-factory",
+            &pw::properties::properties! {
+                "factory.name" => "support.node.driver", "node.name" => "metadata-invalid",
+                "api.v4l2.path" => "/dev/video42/../video0",
+            },
+        )
+        .unwrap();
+    let weak = main_loop.downgrade();
+    let complete = seen.clone();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let timer = main_loop.loop_().add_timer(move |_| {
+        if complete.get() == 7 || Instant::now() >= deadline {
+            weak.upgrade().unwrap().quit();
+        }
+    });
+    let _ = timer.update_timer(
+        Some(Duration::from_millis(10)),
+        Some(Duration::from_millis(10)),
+    );
+    main_loop.run();
+    assert_eq!(
+        seen.get(),
+        7,
+        "native node/client metadata callbacks missing"
+    );
 }

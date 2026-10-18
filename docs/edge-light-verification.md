@@ -1,5 +1,96 @@
 # Edge Light verification
 
+## Current source versus installed plugin (2026-10-17)
+
+The approved camera panel is implemented in source only. The installation records
+below describe the older Edge Light/access-cutout plugin, not deployment or live
+acceptance of this panel. This documentation update ran no camera or light test,
+installation, enablement or restart. Historical evidence below retains its date
+and scope; old test/coverage counts are not evidence for the new panel.
+
+### Observational identity and bounds
+
+- **Process:** means bounded `/proc/<known-holder>/comm` metadata, accepted only
+  with matching before/after process start time and an actual character-device
+  FD matching the observed video device. No holder/device cross-product is used.
+  This is not verified app identity or proof of streaming.
+- **Reported app:** means the active PipeWire consumer's client-reported name
+  (or consumer-reported owner when no client is referenced), never source-owner
+  attribution. Portal/helper names may be all that is available. Labels are
+  untrusted/self-reported, sanitized and rendered as plain text, not resources.
+- PipeWire rows follow running consumer/active-link/running-V4L2-source pairs.
+  **Camera capture observed** and **Camera device accessed** remain distinct;
+  direct access is not confirmed streaming. Unknown app/camera metadata stays
+  unknown, with a validated path shown only when available. No tab/site identity,
+  permissions control, frames, audio or media preview is provided.
+- Device names prefer PipeWire description/nick, with best-effort worker-side
+  sysfs fallback verified against character-device major/minor. Direct access
+  uses bounded sysfs/proc metadata only for already-known devices/holders; it
+  never opens camera devices. Permissions, races, vanished FDs, missing metadata
+  and budgets can leave unknowns. No indicator is proof of inactivity and no
+  complete all-app/device coverage is promised.
+- Each metadata job has a shared **100 ms cooperative budget**, **4 KiB** per
+  metadata file (a read reaching the cap is unavailable), at most **32 device
+  paths**, **16 direct holders** and **256 FD entries/checks per holder**.
+  Individual filesystem calls have no hard timeout. Each worker has one running
+  job, one replaceable pending job and one result slot; capture publication does
+  not wait for enrichment. Public details cap at **32 rows**, **80 UTF-8 bytes**
+  per label and **64 bytes** per validated video path, within the **16 KiB** line
+  limit. Omitted rows can produce “More observations omitted”.
+- Stop/unknown, helper/session reset and changed source generations clear or
+  invalidate labels; late worker results are rejected. Direct metadata refreshes
+  on fresh reconciliation; an equivalent PipeWire graph can retain completed
+  fallback labels without background refresh. Optional missing/invalid metadata
+  does not invalidate positive detection or reset manual light state. Existing
+  camera/lock gates, sliders, target selection and protected cutouts remain.
+
+### Attributed source-check evidence (not rerun by the documentation task)
+
+The 2026-10-17 Task 4 report records **124 Rust tests passed** and **98 Qt6 GPU
+results passed**, including init/cleanup results, with zero failures/skips; both
+native smoke scripts, Rust fmt/Clippy, QML lint/parse, shell syntax and manifest
+validation passed. Host dynamic-type warnings and expected offscreen/socket
+warnings remain; these are not warning-free host validation. Exact commands and
+intermediate failures are in
+`.superpowers/sdd/2026-10-17-camera-panel-implementation/task-4-report.md`.
+
+Task 3's fresh helper line coverage is **87.46% (1,625/1,858)**, including native
+adapters and `main.rs` at 0%, with no source exclusions. This is Rust-only prior
+evidence, not QML coverage; Task 4 did not remeasure it. See the Task 3 section
+below for reproducibility. No new whole-change independent review is claimed
+here; that remains the coordinator's handoff responsibility.
+
+Separately approved live acceptance is still required: owner-controlled capture
+start/stop, physical device/FD and PipeWire links or honest unknowns, concurrent
+users/devices when available, metadata loss, helper restart and hotplug. Physical
+camera links, scaling/multi-monitor behavior, compositor interaction and screen
+reader behavior have not been established by these source checks. Preserve all
+Edge Light safety/access checks; collect no frames or unrelated process data.
+
+## Camera panel Task 3 — local helper verification (2026-10-17)
+
+Source-only PipeWire attribution now follows active camera source/consumer
+relationships. App labels are consumer/client-reported, never source-owner
+guesses. Device description/nick precede optional bounded worker-side sysfs
+enrichment; classification stays pure and capture publishes before enrichment.
+No installation, QML or Hushlight changes were made in this task.
+
+All 124 Rust checks passed, including the extended private metadata-only
+PipeWire fixture, graph masks/removals, concurrent pairs and stale-result tests.
+`cargo fmt --check`, `cargo check --all-targets` and Clippy with `-D warnings`
+passed. Fresh LLVM 22.1.8 instrumentation measured **87.46% helper line coverage
+(1,625/1,858)** across all executable helper sources, including `observer.rs`
+(81.34%) and unexecuted `main.rs` (0%). No source exclusions or tool installs.
+Region coverage: 85.56%; no branch-coverage claim.
+
+Exact reproducible invocation and full RED/GREEN/coverage evidence are in
+`.superpowers/sdd/2026-10-17-camera-panel-implementation/task-3-report.md`;
+manual runner: `python3 .superpowers/sdd/2026-10-17-camera-panel-implementation/task-3-coverage.py`.
+Tests did not open cameras, connect to the user's normal daemon or load hardware
+modules. Native fixture coverage proves property mapping, not live active-camera
+links; sysfs fallback uses injected metadata fixtures. Live acceptance stays
+separate and requires approval.
+
 ## Access update installed (2026-10-17)
 
 Owner-approved pointer recession and permanent bar/popup cutouts are installed.
@@ -378,7 +469,7 @@ cargo fmt --manifest-path helper/Cargo.toml --check
 cargo clippy --manifest-path helper/Cargo.toml --all-targets -- -D warnings
 
 # Offline Qt Quick behavioral tests (Task 3, Task 4) — no window, offscreen
-QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests/qml
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=rhi QSG_RHI_BACKEND=opengl /usr/lib/qt6/bin/qmltestrunner -input tests/qml
 
 # Lint QML that imports the installed Quickshell / qs.* modules
 # (create the importer once, outside the repo, with: ln -s /usr/share/omarchy/shell <importer>/qs)
