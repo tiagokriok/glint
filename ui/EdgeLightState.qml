@@ -28,6 +28,8 @@ QtObject {
   property string targetOutput: ""
   property string cameraEvidence: ""
   property var cameraLimitations: []
+  property var cameraObservations: []
+  property bool cameraDetailsTruncated: false
   property real widthPercent: 6
   property real brightnessPercent: 70
   property real warmthPercent: 30
@@ -41,6 +43,7 @@ QtObject {
   function applyCameraState(state) {
     const wasActive = cameraActive
     cameraActive = state === "active"
+    if (!cameraActive) clearCameraDetails()
     if (!cameraActive || !wasActive) {
       cameraEpoch++
       resetSession()
@@ -49,7 +52,49 @@ QtObject {
     }
   }
   function byteLength(text) {
-    return encodeURIComponent(text).replace(/%[A-F\d]{2}/g, "x").length
+    let bytes = 0
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i)
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length &&
+          text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) {
+        bytes += 4
+        i++
+      } else bytes += code < 128 ? 1 : code < 2048 ? 2 : 3
+    }
+    return bytes
+  }
+  function clearCameraDetails() {
+    cameraObservations = []
+    cameraDetailsTruncated = false
+  }
+  function consumeCameraDetails(value) {
+    clearCameraDetails()
+    try {
+      if (!cameraActive || !value || Array.isArray(value) ||
+          !Array.isArray(value.observations) || value.observations.length > 32 ||
+          typeof value.truncated !== "boolean") return
+      const label = function(text) {
+        if (text === null) return true
+        if (typeof text !== "string" || byteLength(text) > 80 ||
+            /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(text)) return false
+        // Reject ill-formed UTF-16 without letting optional metadata reset the gate.
+        encodeURIComponent(text)
+        return true
+      }
+      const valid = value.observations.every(function(row) {
+        return row && !Array.isArray(row) && label(row.application) && label(row.device) &&
+          ["process", "pipewire-reported", "unknown"].indexOf(row.applicationSource) >= 0 &&
+          ["device-access", "pipewire-capture"].indexOf(row.evidence) >= 0 &&
+          (row.devicePath === null || (typeof row.devicePath === "string" &&
+            row.devicePath.length <= 64 && /^\/dev\/video[0-9]+$/.test(row.devicePath)))
+      })
+      if (!valid) return
+      cameraObservations = value.observations.map(function(row) {
+        return {application: row.application, applicationSource: row.applicationSource,
+          device: row.device, devicePath: row.devicePath, evidence: row.evidence}
+      })
+      cameraDetailsTruncated = value.truncated
+    } catch (error) { clearCameraDetails() }
   }
   function consumeStatusLine(raw) {
     try {
@@ -64,6 +109,7 @@ QtObject {
       cameraEvidence = camera.evidence
       cameraLimitations = camera.limitations.slice()
       applyCameraState(camera.state)
+      consumeCameraDetails(camera.details)
     } catch (error) { clearObserver() }
   }
   function consumeChunk(raw) {
@@ -123,7 +169,7 @@ QtObject {
   }
   function outputRemoved(name) { if (name === targetOutput) disable() }
   function disable() { enabled = false; targetOutput = "" }
-  function resetSession() { disable(); sessionReset() }
+  function resetSession() { disable(); clearCameraDetails(); sessionReset() }
   function bounded(value, low, high, fallback) {
     return typeof value === "number" && isFinite(value) ? Math.max(low, Math.min(high, value)) : fallback
   }

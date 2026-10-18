@@ -7,6 +7,9 @@
 
 use std::collections::BTreeMap;
 
+use crate::attribution::{
+    ApplicationSource, EvidenceKind, Observation, normalize_label, project, valid_path,
+};
 use crate::status::{State, Status};
 
 pub const EV_CAPTURE: &str = "Camera capture observed";
@@ -31,7 +34,7 @@ pub enum NodeState {
     Unknown,
 }
 
-/// Owning client identity used only to distinguish portal screen sources.
+/// PipeWire-reported identity, not verified process or end-user app identity.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GraphOwner {
     pub binary: String,
@@ -58,6 +61,9 @@ pub struct GraphNode {
     pub monitor: bool,
     pub client_id: Option<u32>,
     pub owner: GraphOwner,
+    pub description: Option<String>,
+    pub nick: Option<String>,
+    pub video_path: Option<String>,
 }
 
 impl GraphNode {
@@ -71,6 +77,9 @@ impl GraphNode {
             monitor: false,
             client_id: None,
             owner: GraphOwner::default(),
+            description: None,
+            nick: None,
+            video_path: None,
         }
     }
 
@@ -173,6 +182,7 @@ pub fn classify(graph: &CameraGraph) -> Status {
 
     let mut has_camera = false;
     let mut ambiguous = false;
+    let mut observations = Vec::new();
 
     for stream in &graph.nodes {
         if stream.media_class != CAPTURE_MEDIA_CLASS || stream.state != NodeState::Running {
@@ -194,7 +204,10 @@ pub fn classify(graph: &CameraGraph) -> Status {
 
         for producer in producers {
             match classify_video(producer, &graph.clients) {
-                VideoVerdict::Camera => has_camera = true,
+                VideoVerdict::Camera => {
+                    has_camera = true;
+                    observations.push(capture_observation(stream, producer, &graph.clients));
+                }
                 VideoVerdict::Screen => {}
                 VideoVerdict::Ambiguous => ambiguous = true,
             }
@@ -202,11 +215,53 @@ pub fn classify(graph: &CameraGraph) -> Status {
     }
 
     if has_camera {
-        Status::new(State::Active, EV_CAPTURE, &CAMERA_LIMITATIONS)
+        Status {
+            details: Some(project(&observations)),
+            ..Status::new(State::Active, EV_CAPTURE, &CAMERA_LIMITATIONS)
+        }
     } else if ambiguous {
         Status::new(State::Unknown, EV_UNCLASSIFIED, &CAMERA_LIMITATIONS)
     } else {
         Status::new(State::Unobserved, EV_UNOBSERVED, &CAMERA_LIMITATIONS)
+    }
+}
+
+fn capture_observation(
+    stream: &GraphNode,
+    producer: &GraphNode,
+    clients: &BTreeMap<u32, GraphOwner>,
+) -> Observation {
+    // A removed referenced client is unknown; do not resurrect cached node identity.
+    let owner = match stream.client_id {
+        Some(id) => clients.get(&id),
+        None => Some(&stream.owner),
+    };
+    let application = owner.and_then(|owner| {
+        normalize_label(&owner.name).or_else(|| {
+            std::path::Path::new(&owner.binary)
+                .file_name()?
+                .to_str()
+                .and_then(normalize_label)
+        })
+    });
+    Observation {
+        application_source: if application.is_some() {
+            ApplicationSource::PipewireReported
+        } else {
+            ApplicationSource::Unknown
+        },
+        application,
+        device: producer
+            .description
+            .as_deref()
+            .and_then(normalize_label)
+            .or_else(|| producer.nick.as_deref().and_then(normalize_label)),
+        device_path: producer
+            .video_path
+            .as_ref()
+            .filter(|path| valid_path(path))
+            .cloned(),
+        evidence: EvidenceKind::PipewireCapture,
     }
 }
 

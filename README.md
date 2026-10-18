@@ -1,8 +1,10 @@
 # Glint
 
 Camera-gated Edge Light for Omarchy's built-in Quickshell bar. A Rust helper
-observes supported camera activity; the theme-native camera mark opens a manual
-light toggle and width, brightness, and warmth controls.
+observes supported camera activity; the theme-native camera mark opens observed
+app/device details plus a manual light toggle and width, brightness, and warmth
+controls. The camera panel is implemented in source, not installed: the recorded
+installed plugin is the older Edge Light/access-cutout version.
 
 Hushlight is a separate project and is not replaced or modified.
 
@@ -28,6 +30,22 @@ Hushlight is a separate project and is not replaced or modified.
   geometry temporarily hides illumination without changing the manual toggle.
 
 ## Detection limits
+
+The source panel distinguishes **Process:** labels from bounded `/proc` metadata
+and **Reported app:** labels supplied by PipeWire consumers/clients. Neither is
+verified application identity: names are untrusted/self-reported and rendered as
+plain text. PipeWire rows follow actual active consumer/source links; direct
+access rows require an actual matching character-device FD, with process start
+time checked before/after metadata reads, rather than pairing every holder with
+every camera. Missing or inaccessible metadata stays **Unknown application** or
+**Unknown camera**; a validated device path may still be shown.
+
+Details are best-effort snapshots, not permissions or browser tab/site
+attribution. There is no media preview, frame/audio access, permission control,
+or guarantee of all-app/device coverage. Optional metadata failure does not
+change positive camera evidence or the manual Edge Light controls. Details clear
+on stop/unknown/helper or session reset; stale worker results are rejected.
+See `docs/edge-light-verification.md` for scan budgets and evidence limits.
 
 PipeWire capture requires a running video consumer, an active link, and a running
 V4L2 producer. Direct `/dev/video*` holders are reconciled using native inotify

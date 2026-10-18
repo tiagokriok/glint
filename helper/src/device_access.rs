@@ -3,7 +3,8 @@
 //!
 //! Direct device access is weaker evidence than a linked PipeWire capture
 //! stream: a holder only counts as active after it has stayed present for a
-//! debounce window. Holder identities never leave this module.
+//! debounce window. Holder IDs remain internal and may feed metadata-only
+//! enrichment; they never enter the public status schema.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

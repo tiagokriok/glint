@@ -146,3 +146,109 @@ fn client_ownership_resolves_to_screen_source() {
 
     assert_eq!(store.classify().state, State::Unobserved);
 }
+
+fn labeled_source(id: u32, label: &str) -> GraphNode {
+    GraphNode {
+        description: Some(label.into()),
+        nick: Some(format!("{label} nick")),
+        video_path: Some(format!("/dev/video{id}")),
+        ..v4l2(id)
+    }
+}
+
+#[test]
+fn metadata_masks_preserve_unrelated_fields_and_explicit_removal_clears_them() {
+    let mut store = seeded_store();
+    let source = labeled_source(2, "Camera A");
+    store.upsert_node(source.clone());
+    store.apply_node_update(GraphNode::new(2, "", NodeState::Unknown), false, false);
+    assert_eq!(store.graph().nodes[0], source);
+    store.apply_node_update(GraphNode::new(2, "", NodeState::Running), true, false);
+    assert_eq!(store.graph().nodes[0], source);
+    store.apply_node_update(v4l2(2), false, true);
+    let cleared = store.graph().nodes[0].clone();
+    assert_eq!(cleared.state, NodeState::Running);
+    assert_eq!(
+        (cleared.description, cleared.nick, cleared.video_path),
+        (None, None, None)
+    );
+    store.upsert_client(7, GraphOwner::new("call", "Call A"));
+    store.apply_client_update(7, GraphOwner::default(), false);
+    assert_eq!(store.graph().clients[&7].name, "Call A");
+    store.apply_client_update(7, GraphOwner::default(), true);
+    assert_eq!(store.graph().clients[&7], GraphOwner::default());
+    store.apply_client_update(8, GraphOwner::new("ignored", "Ignored"), false);
+    assert!(!store.graph().clients.contains_key(&8));
+}
+
+#[test]
+fn individual_property_removals_step_from_description_to_nick_to_unknown() {
+    let mut store = seeded_store();
+    store.upsert_node(labeled_source(2, "Camera A"));
+    let without_description = GraphNode {
+        description: None,
+        ..labeled_source(2, "Camera A")
+    };
+    store.apply_node_update(without_description.clone(), false, true);
+    assert_eq!(
+        store.classify().details.unwrap().observations[0]
+            .device
+            .as_deref(),
+        Some("Camera A nick")
+    );
+    store.apply_node_update(
+        GraphNode {
+            nick: None,
+            ..without_description
+        },
+        false,
+        true,
+    );
+    let row = store.classify().details.unwrap().observations.remove(0);
+    assert_eq!(row.device, None);
+    assert_eq!(row.device_path.as_deref(), Some("/dev/video2"));
+    store.apply_node_update(v4l2(2), false, true);
+    assert_eq!(
+        store.classify().details.unwrap().observations[0].device_path,
+        None
+    );
+}
+
+#[test]
+fn concurrent_pairs_and_removals_never_retain_old_labels() {
+    let mut store = seeded_store();
+    store.upsert_node(labeled_source(2, "Camera A"));
+    store.upsert_node(stream(10).with_client(7));
+    store.upsert_client(7, GraphOwner::new("a", "Call A"));
+    store.upsert_node(labeled_source(3, "Camera B"));
+    store.upsert_node(stream(11).with_client(8));
+    store.upsert_client(8, GraphOwner::new("b", "Call B"));
+    store.upsert_link(GraphLink::new(101, 3, 11));
+    let rows = store.classify().details.unwrap().observations;
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        (rows[0].application.as_deref(), rows[0].device.as_deref()),
+        (Some("Call A"), Some("Camera A"))
+    );
+    assert_eq!(
+        (rows[1].application.as_deref(), rows[1].device.as_deref()),
+        (Some("Call B"), Some("Camera B"))
+    );
+    store.remove_client(7);
+    assert_eq!(
+        store.classify().details.unwrap().observations[0].application,
+        None
+    );
+    store.remove_node(10);
+    assert_eq!(store.classify().details.unwrap().observations.len(), 1);
+    store.remove_link(101);
+    assert!(store.classify().details.is_none());
+    store.upsert_link(GraphLink::new(101, 3, 11));
+    store.remove_node(3);
+    assert!(store.classify().details.is_none());
+    store.disconnect();
+    assert!(store.classify().details.is_none());
+    store.connect();
+    store.mark_synced();
+    assert!(store.classify().details.is_none());
+}

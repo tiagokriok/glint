@@ -16,8 +16,12 @@ use std::time::{Duration, Instant};
 use pipewire as pw;
 use pw::proxy::{Listener, ProxyT};
 
+use crate::attribution_worker::AttributionWorker;
 use crate::camera::{CameraGraph, GraphLink, GraphNode, GraphOwner, NodeState as CameraNodeState};
+use crate::device_metadata::FsMetadataIo;
+use crate::runtime::{PipewirePublisher, enrich_pipewire_with};
 use crate::status::{State, Status};
+use std::path::Path;
 
 /// Folds PipeWire registry updates into a coherent camera graph.
 #[derive(Debug, Default, Clone)]
@@ -90,6 +94,12 @@ impl GraphStore {
         self.clients.insert(id, owner);
     }
 
+    pub fn apply_client_update(&mut self, id: u32, owner: GraphOwner, props_changed: bool) {
+        if props_changed {
+            self.upsert_client(id, owner);
+        }
+    }
+
     pub fn remove_client(&mut self, id: u32) {
         self.clients.remove(&id);
     }
@@ -140,6 +150,13 @@ pub fn initializing_status() -> Status {
 /// reconnect never reuses prior positive evidence.
 pub fn run_pipewire(sink: Sender<Status>, stop: Arc<AtomicBool>) {
     pw::init();
+    let sink = Rc::new(RefCell::new(PipewirePublisher::new(
+        sink,
+        AttributionWorker::new(|job| {
+            enrich_pipewire_with(&FsMetadataIo, Path::new("/sys"), Path::new("/dev"), &job)
+        })
+        .ok(),
+    )));
     let mut backoff = Duration::from_millis(250);
     while !stop.load(Ordering::Relaxed) {
         if let Err(error) = pipewire_session(&sink, &stop) {
@@ -156,13 +173,15 @@ pub fn run_pipewire(sink: Sender<Status>, stop: Arc<AtomicBool>) {
     unsafe { pw::deinit() };
 }
 
-fn pipewire_session(sink: &Sender<Status>, stop: &Arc<AtomicBool>) -> Result<(), pw::Error> {
+fn pipewire_session(sink: &Rc<Publisher>, stop: &Arc<AtomicBool>) -> Result<(), pw::Error> {
     let main_loop = pw::main_loop::MainLoopRc::new(None)?;
 
     // Programmatic stop fallback; signals below also quit the loop.
     let weak = main_loop.downgrade();
     let stop_timer = stop.clone();
+    let sink_timer = sink.clone();
     let timer = main_loop.loop_().add_timer(move |_| {
+        sink_timer.borrow_mut().poll();
         if stop_timer.load(Ordering::Relaxed)
             && let Some(main_loop) = weak.upgrade()
         {
@@ -320,7 +339,12 @@ fn pipewire_session(sink: &Sender<Status>, stop: &Arc<AtomicBool>) -> Result<(),
                         .add_listener_local()
                         .info(move |info| {
                             let mut state = store_info.borrow_mut();
-                            state.upsert_client(info.id(), client_from_info(info));
+                            state.apply_client_update(
+                                info.id(),
+                                client_from_info(info),
+                                info.change_mask()
+                                    .contains(pw::client::ClientChangeMask::PROPS),
+                            );
                             let status = state.classify();
                             drop(state);
                             publish(&sink_info, &status);
@@ -376,8 +400,10 @@ impl Proxies {
     }
 }
 
-fn publish(sink: &Sender<Status>, status: &Status) {
-    let _ = sink.send(status.clone());
+type Publisher = RefCell<PipewirePublisher<AttributionWorker>>;
+
+fn publish(sink: &Publisher, status: &Status) {
+    sink.borrow_mut().publish(status.clone());
 }
 
 fn sleep_interruptible(total: Duration, stop: &AtomicBool) {
@@ -390,7 +416,8 @@ fn sleep_interruptible(total: Duration, stop: &AtomicBool) {
     }
 }
 
-fn node_from_info(info: &pw::node::NodeInfoRef) -> GraphNode {
+/// Project native node metadata without filesystem access. Masks are applied by GraphStore.
+pub fn node_from_info(info: &pw::node::NodeInfoRef) -> GraphNode {
     let props = info.props();
     GraphNode {
         id: info.id(),
@@ -404,10 +431,15 @@ fn node_from_info(info: &pw::node::NodeInfoRef) -> GraphNode {
             &dict_get(props, "application.process.binary"),
             &dict_get(props, "application.name"),
         ),
+        description: nonempty(dict_get(props, "node.description")),
+        nick: nonempty(dict_get(props, "node.nick")),
+        video_path: nonempty(dict_get(props, "api.v4l2.path"))
+            .filter(|path| crate::attribution::valid_path(path)),
     }
 }
 
-fn client_from_info(info: &pw::client::ClientInfoRef) -> GraphOwner {
+/// Project only the reported application name and executable label.
+pub fn client_from_info(info: &pw::client::ClientInfoRef) -> GraphOwner {
     let props = info.props();
     GraphOwner::new(
         &dict_get(props, "application.process.binary"),
