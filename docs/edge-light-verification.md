@@ -1,12 +1,29 @@
 # Edge Light verification
 
-## Current source versus installed plugin (2026-10-17)
+## Camera panel installed and partially live-accepted (2026-10-19)
 
-The approved camera panel is implemented in source only. The installation records
-below describe the older Edge Light/access-cutout plugin, not deployment or live
-acceptance of this panel. This documentation update ran no camera or light test,
-installation, enablement or restart. Historical evidence below retains its date
-and scope; old test/coverage counts are not evidence for the new panel.
+The release helper and runtime plugin files from merged `main` were staged,
+validated, backed up, and installed at
+`~/.config/omarchy/plugins/glint.privacy/`. Backup:
+`~/.config/omarchy/glint-camera-panel-backup.80ftaO/`. The session was unlocked;
+the normal guarded shell restart succeeded, shell ping returned `ok`, and exactly
+one installed `glint-helper` remained. Glint and Hushlight stayed enabled.
+`shell.json` and all Hushlight file hashes matched their pre-install snapshots.
+No packaged Omarchy or Hushlight file was edited.
+
+The owner started Brave with an HD Pro Webcam C920 and opened the real popup.
+The installed helper and visible panel both reported `Process: brave`,
+`HD Pro Webcam C920 · /dev/video2`, and `Camera device accessed`; the wording did
+not claim streaming. Owner-provided screenshots confirmed the activity section,
+toggle, and all three sliders were visible and usable. After camera use stopped,
+the owner confirmed the icon and light disappeared; a bounded helper sample then
+settled to `unobserved` / `No capture observed on supported paths`.
+
+This is partial live acceptance, not complete hardware/compositor coverage. It
+does not establish a PipeWire-capture attribution path, concurrent callers or
+devices, hotplug/restart behavior during capture, fractional/rotated/multi-monitor
+placement, tiny physical screens, or screen-reader behavior. No frames or audio
+were collected. Historical evidence below retains its original date and scope.
 
 ### Observational identity and bounds
 

@@ -2,12 +2,11 @@
 
 ## Current local implementation
 
-Camera panel implementation is approved and present in source (2026-10-17),
-inside the existing Edge Light popup. It shows bounded observed process or
-PipeWire-reported app/device pairs, explicit unknowns and capture-versus-access
-wording; it is not installed or live-accepted. The recorded installed plugin is
-the older Edge Light/access-cutout version below. Manual Edge Light behavior is
-unchanged. See `README.md` for identity/coverage limits and
+Camera panel implementation is approved, merged, installed, and partially
+live-accepted (2026-10-19) inside the existing Edge Light popup. A Brave session
+using an HD Pro Webcam C920 showed the evidence-backed process/device pair and
+`Camera device accessed`; stopping camera use removed the icon and light. Manual
+Edge Light behavior is unchanged. See `README.md` for identity/coverage limits and
 `docs/edge-light-verification.md` for attributed source-check evidence and budgets.
 No browser tab/site attribution, permissions UI or media preview is implemented.
 
@@ -17,7 +16,7 @@ stay unchanged. Cursor-only local socket tracking runs only while lit; failures
 hide rendering temporarily, preserving manual enabled state. Plan:
 `docs/superpowers/plans/2026-10-17-edge-light-access.md`.
 
-Edge Light source and local tests are present on `feat/edge-light`.
+Edge Light and the camera panel are merged into `main`.
 Owner authorized installation for testing on 2026-10-16: `glint.privacy` is
 installed and enabled alongside unchanged Hushlight. Shell config backup:
 `~/.config/omarchy/glint-backup.TIM9pz/shell.json`. See `README.md` for build/check
@@ -25,6 +24,11 @@ commands and `docs/edge-light-verification.md` for evidence and pending live
 acceptance. The service owns one shared observer/state/overlay; per-monitor
 widgets show only for observed camera use. Sustained-device fallback requires
 a confirming lookup rather than promotion from a stale single sample.
+
+Camera-panel installation backup (2026-10-19):
+`~/.config/omarchy/glint-camera-panel-backup.80ftaO/`. The normal guarded shell
+restart succeeded; shell ping returned `ok`, exactly one installed helper remained,
+and Hushlight plus `shell.json` hashes were unchanged.
 
 User-approved icon change: Glint now uses a small filled video-camera mark,
 drawn locally with theme-colored QML geometry (no font or runtime network
