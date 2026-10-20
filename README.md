@@ -3,8 +3,8 @@
 Camera-gated Edge Light for Omarchy's built-in Quickshell bar. A Rust helper
 observes supported camera activity; the theme-native camera mark opens observed
 app/device details plus a manual light toggle and width, brightness, and warmth
-controls. The camera panel is implemented in source, not installed: the recorded
-installed plugin is the older Edge Light/access-cutout version.
+controls. The camera panel is installed for local testing; live acceptance has
+confirmed one direct-access Brave/C920 session and camera-stop cleanup.
 
 Hushlight is a separate project and is not replaced or modified.
 
